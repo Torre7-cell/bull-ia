@@ -7,7 +7,6 @@ from PIL import Image
 # Configuración de página
 st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
 
-# Estilo visual en modo oscuro
 st.markdown("""
     <style>
     .stApp { background-color: #09090b; color: #f4f4f5; }
@@ -17,7 +16,7 @@ st.markdown("""
 
 st.title("🐂 Bull IA")
 
-# 1. Configuración de API Key desde los Secrets de Streamlit o entrada manual
+# 1. API Key
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 else:
@@ -29,41 +28,31 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Modelos
-MODELOS_TEXTO = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
-MODELOS_IMAGEN = ['imagen-3.0-generate-002', 'gemini-2.5-flash']
+# 2. Modelos actualizados a la generación Gemini 3.x
+MODELOS_TEXTO = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
+MODELOS_IMAGEN = ['gemini-3.1-flash-image', 'gemini-3-pro-image']
 
-# 2. Inicializar estado de sesión
+# 3. Inicializar estado de sesión (Memoria)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "modo_arte" not in st.session_state:
-    st.session_state.modo_arte = False
-
-# Mostrar historial completo en pantalla
+# Dibujar historial
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        if isinstance(message["content"], tuple):  # Imagen + Texto
+        if isinstance(message["content"], tuple):
             st.image(message["content"][0], use_container_width=True)
             if message["content"][1]:
                 st.write(message["content"][1])
-        elif isinstance(message["content"], Image.Image):  # Solo imagen generada
+        elif isinstance(message["content"], Image.Image):
             st.image(message["content"], caption="Imagen generada", use_container_width=True)
         else:
             st.write(message["content"])
 
-# 3. Menú lateral (Sidebar)
+# 4. Menú lateral
 with st.sidebar:
     st.header("⚙️ Opciones de Bull IA")
+    modo_arte = st.toggle("🎨 Modo Crear Imagen (PNG)")
     
-    # Interruptor para el modo imagen (se mantiene activo)
-    st.session_state.modo_arte = st.toggle("🎨 Modo Crear Imagen (PNG)", value=st.session_state.modo_arte)
-    
-    if st.session_state.modo_arte:
-        st.success("🟢 Modo Crear Imagen ACTIVO")
-    else:
-        st.info("⚪ Modo Chat / Conversación ACTIVO")
-
     st.subheader("📷 Adjuntar Imagen")
     opcion_foto = st.radio("Fuente de imagen:", ["Ninguna", "📁 Galería", "📷 Cámara"])
     
@@ -73,11 +62,11 @@ with st.sidebar:
     elif opcion_foto == "📷 Cámara":
         imagen_subida = st.camera_input("Toma una foto")
 
-# 4. Procesamiento de entrada del usuario
+# 5. Lógica del Chat con Memoria
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
     # MODO CREAR IMAGEN
-    if st.session_state.modo_arte:
+    if modo_arte:
         st.session_state.messages.append({"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"})
         with st.chat_message("user"):
             st.write(f"🎨 [Crear imagen]: {prompt}")
@@ -99,20 +88,18 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                                 st.session_state.messages.append({"role": "assistant", "content": img})
                                 exito = True
                                 break
-                        if exito:
-                            break
+                        if exito: break
                     except Exception:
                         continue
                 if not exito:
-                    msg_err = "⚠️ No se pudo generar la imagen con el modelo actual. Intenta con otra descripción."
+                    msg_err = "⚠️ No se pudo generar la imagen. Intenta con otra descripción."
                     st.error(msg_err)
                     st.session_state.messages.append({"role": "assistant", "content": msg_err})
 
-    # MODO CHAT Y MEMORIA
+    # MODO CHAT CON MEMORIA DE CONVERSACIÓN
     else:
         img_pil = Image.open(imagen_subida) if imagen_subida else None
 
-        # Guardar entrada del usuario en el historial
         if img_pil:
             st.session_state.messages.append({"role": "user", "content": (img_pil, prompt)})
             with st.chat_message("user"):
@@ -123,7 +110,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
             with st.chat_message("user"):
                 st.write(prompt)
 
-        # Construir el contexto con la memoria previa
+        # Construir contexto acumulado para recordar todo
         contents = ["Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."]
         
         for msg in st.session_state.messages:
@@ -149,6 +136,6 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                         continue
 
                 if not respuesta_exitosa:
-                    msg_err = "⚠️ Límite de peticiones alcanzado o error temporal. Intenta de nuevo en unos momentos."
+                    msg_err = "⚠️ Error de conexión o límite de cuota alcanzado. Intenta de nuevo en unos momentos."
                     st.error(msg_err)
                     st.session_state.messages.append({"role": "assistant", "content": msg_err})
