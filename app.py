@@ -8,13 +8,13 @@ from PIL import Image
 # Configuración de página con tema oscuro
 st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
 
-# CSS personalizado para estilo negro/oscuro elegante
+# CSS personalizado para estilo negro/oscuro elegante (CORREGIDO AQUÍ)
 st.markdown("""
     <style>
     .stApp { background-color: #09090b; color: #f4f4f5; }
     div[data-testid="stToolbar"] { visibility: hidden; }
     </style>
-""", unsafe_allow_allow_html=True)
+""", unsafe_allow_html=True)
 
 st.title("🐂 Bull IA")
 
@@ -41,7 +41,7 @@ if "messages" not in st.session_state:
 # Mostrar historial de conversación
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        if isinstance(message["content"], tuple): # Si contiene imagen + texto
+        if isinstance(message["content"], tuple):
             st.image(message["content"][0], use_container_width=True)
             if message["content"][1]:
                 st.write(message["content"][1])
