@@ -1,9 +1,9 @@
 import io
 import urllib.parse
 import uuid
+from PIL import Image
 from google import genai
 from google.genai import types
-from PIL import Image
 import requests
 import streamlit as st
 
@@ -54,7 +54,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. TUS MODELOS ACTUALIZADOS (Mantenidos exactamente como los tenías)
+# 2. TUS MODELOS ACTUALIZADOS
 MODELOS_TEXTO = [
     "gemini-3.7-flash",
     "gemini-3.6-flash",
@@ -147,7 +147,7 @@ with col_plus:
 # 6. Lógica del Chat
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
-  # MODO CREAR IMAGEN (Gratis, Ilimitado y Descargado en Servidor)
+  # MODO CREAR IMAGEN
   if modo_arte:
     current_messages.append(
         {"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"}
@@ -176,10 +176,12 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
           # Codificar texto para formato URL
           prompt_encoded = urllib.parse.quote(prompt_ingles)
-          url_imagen = f"https://pollinations.ai{prompt_encoded}?width=1024&height=1024&nologo=true"
+
+          # CORRECCIÓN AQUÍ: Se añadió la estructura /prompt/ correctamente
+          url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
 
           # Descarga de la imagen
-          response_img = requests.get(url_imagen, timeout=15)
+          response_img = requests.get(url_imagen, timeout=20)
 
           if response_img.status_code == 200:
             img_real = Image.open(io.BytesIO(response_img.content))
@@ -198,7 +200,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           st.error(msg_err)
           current_messages.append({"role": "assistant", "content": msg_err})
 
-  # MODO CHAT CON MEMORIA DE CONVERSACIÓN (Tus modelos nuevos activos)
+  # MODO CHAT CON MEMORIA DE CONVERSACIÓN
   else:
     img_pil = Image.open(imagen_subida) if imagen_subida else None
 
@@ -218,7 +220,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           prompt[:20] + "..."
       )
 
-    # Construir contexto de memoria del chat activo de forma segura
+    # Construir contexto de memoria del chat activo
     contents = [
         "Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."
     ]
@@ -229,7 +231,6 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       if isinstance(msg["content"], str):
         contents.append(f"{role_prefix} {msg['content']}")
       elif isinstance(msg["content"], tuple):
-        # CORREGIDO CON CORCHETES: Separación de foto [0] y texto [1]
         foto_usuario = msg["content"][0]
         texto_usuario = msg["content"][1]
 
