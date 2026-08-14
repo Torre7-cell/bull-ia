@@ -107,16 +107,16 @@ current_messages = st.session_state.chats[st.session_state.current_chat_id][
 for message in current_messages:
   with st.chat_message(message["role"]):
     if isinstance(message["content"], tuple):
-      st.image(message["content"][0], use_container_width=True)
-      if message["content"][1]:
-        st.write(message["content"][1])
+      st.image(message["content"], use_container_width=True)
+      if message["content"]:
+        st.write(message["content"])
     elif isinstance(message["content"], Image.Image):
       st.image(message["content"], caption="Imagen generada", use_container_width=True)
     else:
       st.write(message["content"])
 
 # 5. MENÚ + CON LAS 3 OPCIONES
-col_plus, col_vacia = st.columns([1, 10])
+col_plus, col_vacia = st.columns()
 
 with col_plus:
   with st.popover("➕", help="Opciones de cámara, galería y creación"):
@@ -173,8 +173,8 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           # Codificar texto para formato URL
           prompt_encoded = urllib.parse.quote(prompt_ingles)
 
-          # DIRECCIÓN WEB COMPLETAMENTE CORREGIDA CON /prompt/
-          url_imagen = f"https://pollinations.ai{prompt_encoded}?width=1024&height=1024&nologo=true"
+          # URL CORREGIDA CON LA DIAGONAL EXACTA /prompt/
+          url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
 
           # Descarga de los bytes reales de la imagen desde el servidor
           response_img = requests.get(url_imagen, timeout=15)
@@ -231,9 +231,9 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       if isinstance(msg["content"], str):
         contents.append(f"{role_prefix} {msg['content']}")
       elif isinstance(msg["content"], tuple):
-        contents.append(f"{role_prefix} {msg['content'][1]}")
-        if msg["content"][0] is not None:
-          contents.append(msg["content"][0])
+        contents.append(f"{role_prefix} {msg['content']}")
+        if msg["content"] is not None:
+          contents.append(msg["content"])
       elif isinstance(msg["content"], Image.Image):
         # Le avisa a la memoria de Gemini de texto que ya se generó una imagen antes
         contents.append(f"{role_prefix} [Imagen generada previamente]")
