@@ -73,7 +73,6 @@ def cargar_chats_db():
   chats = {}
   for row in rows:
     cid, title, msgs_json = row
-    # Deserializar mensajes. Las imágenes PIL se omiten o se manejan como texto/etiqueta en persistencia básica
     try:
       parsed_msgs = json.loads(msgs_json)
     except Exception:
@@ -83,8 +82,6 @@ def cargar_chats_db():
 
 
 def guardar_chat_db(cid, title, messages):
-  # Filtramos contenido complejo que no sea serializable en JSON (como objetos PIL o tuplas de imágenes)
-  # Guardaremos representaciones limpias de texto o metadatos de imágenes
   conn = sqlite3.connect("bull_ia.db")
   c = conn.cursor()
 
@@ -128,7 +125,7 @@ MODELOS_TEXTO = [
     "gemini-3.5-flash-lite",
 ]
 
-# 3. Sincronizar Estado con SQLite
+# 3. Sincronizar Estado con SQLite de forma segura
 chats_guardados = cargar_chats_db()
 if "chats" not in st.session_state:
   st.session_state.chats = chats_guardados
@@ -138,8 +135,13 @@ if not st.session_state.chats:
   st.session_state.chats[first_id] = {"title": "Chat Principal", "messages": []}
   guardar_chat_db(first_id, "Chat Principal", [])
 
+# CORREGIDO: Asignar un ID de texto único de forma estricta (no una lista)
 if "current_chat_id" not in st.session_state:
-  st.session_state.current_chat_id = list(st.session_state.chats.keys())
+  st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
+
+# Doble verificación por si el ID guardado se quedó corrupto en la sesión
+if not isinstance(st.session_state.current_chat_id, str):
+  st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
 
 
 def crear_nuevo_chat():
@@ -163,10 +165,11 @@ with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
   nombres_chats = {
       cid: data["title"] for cid, data in st.session_state.chats.items()
   }
-  # Asegurar índice válido
   current_cids = list(nombres_chats.keys())
+
+  # Asegurar que el ID actual exista en la base de datos
   if st.session_state.current_chat_id not in current_cids:
-    st.session_state.current_chat_id = current_cids
+    st.session_state.current_chat_id = current_cids[0]
 
   chat_seleccionado = st.selectbox(
       "Seleccionar conversación activa:",
@@ -190,7 +193,7 @@ for message in current_messages:
     st.write(message["content"])
 
 # 5. MENÚ + CON LAS 3 OPCIONES
-col_plus, col_vacia = st.columns(2)
+col_plus, col_vacia = st.columns([1, 10])
 
 with col_plus:
   with st.popover("➕", help="Opciones de cámara, galería y creación"):
@@ -304,5 +307,5 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           st.error(err_msg)
           current_messages.append({"role": "assistant", "content": err_msg})
 
-  # Guardar cambios permanentemente en SQLite tras cada interacción
+  # Guardar cambios permanentemente en SQLite
   guardar_chat_db(active_cid, active_title, current_messages)
