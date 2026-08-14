@@ -115,10 +115,14 @@ if not api_key:
   st.stop()
 
 client = genai.Client(api_key=api_key)
+
+# Modelos actualizados a la serie 3
 MODELOS_TEXTO = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
 ]
+
 chats_guardados = cargar_chats_db()
 st.session_state.chats = chats_guardados
 
@@ -260,7 +264,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           prompt_ingles = prompt
           try:
             traduccion = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.7-flash",
                 contents=(
                     "Translate image prompt to descriptive English, reply with"
                     f" ONLY translated text: {prompt}"
@@ -321,7 +325,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
         try:
           video_file = client.files.upload(file=tmp_path)
           response = client.models.generate_content(
-              model="gemini-2.5-flash",
+              model="gemini-3.7-flash",
               contents=[
                   video_file,
                   prompt if prompt else "Describe este video.",
