@@ -1,4 +1,5 @@
 import io
+import urllib.parse
 import uuid
 from google import genai
 from google.genai import types
@@ -40,7 +41,7 @@ st.markdown(
 
 st.title("🐂 Bull IA")
 
-# 1. API Key
+# 1. API Key de Gemini (Solo para Texto y Análisis de Visión)
 if "GEMINI_API_KEY" in st.secrets:
   api_key = st.secrets["GEMINI_API_KEY"]
 else:
@@ -52,9 +53,8 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Modelos actualizados
+# 2. Modelos actualizados de Texto y Visión
 MODELOS_TEXTO = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-MODELOS_IMAGEN = ["imagen-3.0-generate-002"]
 
 # 3. Inicializar Estado de Chats Múltiples
 if "chats" not in st.session_state:
@@ -109,7 +109,7 @@ for message in current_messages:
       st.image(message["content"][0], use_container_width=True)
       if message["content"][1]:
         st.write(message["content"][1])
-    elif isinstance(message["content"], Image.Image):
+    elif message["content"].startswith("http"):
       st.image(message["content"], caption="Imagen generada", use_container_width=True)
     else:
       st.write(message["content"])
@@ -142,7 +142,7 @@ with col_plus:
 # 6. Lógica del Chat
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
-  # MODO CREAR IMAGEN
+  # MODO CREAR IMAGEN (Gratis e Ilimitado con Pollinations.ai)
   if modo_arte:
     current_messages.append(
         {"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"}
@@ -151,38 +151,42 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       st.write(f"🎨 [Crear imagen]: {prompt}")
 
     with st.chat_message("assistant"):
-      with st.spinner("Creando tu imagen..."):
-        exito = False
-        for mod_img in MODELOS_IMAGEN:
+      with st.spinner("Bull IA está dibujando tu imagen gratis..."):
+        try:
+          # Traducir al inglés en segundo plano para que Pollinations dibuje mucho mejor
+          prompt_ingles = prompt
           try:
-            result = client.models.generate_images(
-                model=mod_img,
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    output_mime_type="image/jpeg",
-                    aspect_ratio="1:1",
+            traduccion = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=(
+                    "Translate the following image prompt to descriptive English"
+                    f" for an AI image generator, reply with ONLY the translated"
+                    f" text: {prompt}"
                 ),
             )
-            for generated_image in result.generated_images:
-              # Corrección aplicada aquí (.bytes en lugar de .image_bytes)
-              img = Image.open(io.BytesIO(generated_image.image.bytes))
-              st.image(img, caption="Imagen generada", use_container_width=True)
-              current_messages.append({"role": "assistant", "content": img})
-              exito = True
-              break
-            if exito:
-              break
-          except Exception as e:
-            continue
-        if not exito:
-          msg_err = (
-              "⚠️ No se pudo generar la imagen. Intenta con otra descripción."
+            if traduccion.text:
+              prompt_ingles = traduccion.text.strip()
+          except Exception:
+            pass
+
+          # Codificar texto para formato URL
+          prompt_encoded = urllib.parse.quote(prompt_ingles)
+          url_imagen = f"https://pollinations.ai{prompt_encoded}?width=1024&height=1024&nologo=true"
+
+          # Mostrar la imagen
+          st.image(
+              url_imagen,
+              caption=f"Generado con: {prompt}",
+              use_container_width=True,
           )
+          current_messages.append({"role": "assistant", "content": url_imagen})
+
+        except Exception as e:
+          msg_err = f"⚠️ No se pudo procesar la imagen: {e}"
           st.error(msg_err)
           current_messages.append({"role": "assistant", "content": msg_err})
 
-  # MODO CHAT CON MEMORIA DE CONVERSACIÓN
+  # MODO CHAT CON MEMORIA DE CONVERSACIÓN (Gemini gratis)
   else:
     img_pil = Image.open(imagen_subida) if imagen_subida else None
 
@@ -202,21 +206,24 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           prompt[:20] + "..."
       )
 
-    # Construir contexto del chat activo con soporte para imágenes pasadas
+    # Construir contexto de memoria del chat activo
     contents = [
         "Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."
     ]
 
     for msg in current_messages:
       role_prefix = "Usuario:" if msg["role"] == "user" else "Bull IA:"
+
       if isinstance(msg["content"], str):
-        contents.append(f"{role_prefix} {msg['content']}")
+        # Si es un enlace de Pollinations generado antes, le avisa al modelo de texto que ya dibujó
+        if msg["content"].startswith("http"):
+          contents.append(f"{role_prefix} [Imagen generada previamente]")
+        else:
+          contents.append(f"{role_prefix} {msg['content']}")
       elif isinstance(msg["content"], tuple):
         contents.append(f"{role_prefix} {msg['content'][1]}")
         if msg["content"][0] is not None:
           contents.append(msg["content"][0])
-      elif isinstance(msg["content"], Image.Image):
-        contents.append(f"{role_prefix} [Imagen generada previamente]")
 
     with st.chat_message("assistant"):
       with st.spinner("Bull IA está pensando..."):
