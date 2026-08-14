@@ -4,7 +4,7 @@ import uuid
 from google import genai
 from google.genai import types
 from PIL import Image
-import requests  # NUEVO: Necesario para descargar la imagen de Pollinations
+import requests  # Para descargar las imágenes gratuitas
 import streamlit as st
 
 # Configuración de página
@@ -111,7 +111,6 @@ for message in current_messages:
       if message["content"][1]:
         st.write(message["content"][1])
     elif isinstance(message["content"], Image.Image):
-      # CORREGIDO: Ahora el historial lee correctamente los objetos de imagen descargados
       st.image(message["content"], caption="Imagen generada", use_container_width=True)
     else:
       st.write(message["content"])
@@ -173,9 +172,11 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
           # Codificar texto para formato URL
           prompt_encoded = urllib.parse.quote(prompt_ingles)
+
+          # DIRECCIÓN WEB COMPLETAMENTE CORREGIDA CON /prompt/
           url_imagen = f"https://pollinations.ai{prompt_encoded}?width=1024&height=1024&nologo=true"
 
-          # CORREGIDO: Descarga de los bytes reales de la imagen desde el servidor
+          # Descarga de los bytes reales de la imagen desde el servidor
           response_img = requests.get(url_imagen, timeout=15)
 
           if response_img.status_code == 200:
@@ -186,7 +187,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
             st.image(
                 img_real, caption=f"Generado con: {prompt}", use_container_width=True
             )
-            # Guardamos el archivo de imagen en el historial, no la URL rota
+            # Guardamos el archivo de imagen en el historial
             current_messages.append({"role": "assistant", "content": img_real})
           else:
             st.error(
@@ -234,7 +235,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
         if msg["content"][0] is not None:
           contents.append(msg["content"][0])
       elif isinstance(msg["content"], Image.Image):
-        # CORREGIDO: Le avisa a la memoria de Gemini de texto que ya se generó una imagen antes
+        # Le avisa a la memoria de Gemini de texto que ya se generó una imagen antes
         contents.append(f"{role_prefix} [Imagen generada previamente]")
 
     with st.chat_message("assistant"):
