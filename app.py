@@ -1,5 +1,6 @@
 import streamlit as st
 import io
+import uuid
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -32,12 +33,45 @@ client = genai.Client(api_key=api_key)
 MODELOS_TEXTO = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
 MODELOS_IMAGEN = ['gemini-3.1-flash-image', 'gemini-3-pro-image']
 
-# 3. Inicializar estado de sesión (Memoria)
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# 3. Inicializar Estado de Chats Múltiples
+if "chats" not in st.session_state:
+    st.session_state.chats = {}
 
-# Dibujar historial
-for message in st.session_state.messages:
+if "current_chat_id" not in st.session_state:
+    first_id = str(uuid.uuid4())
+    st.session_state.chats[first_id] = {"title": "Chat Principal", "messages": []}
+    st.session_state.current_chat_id = first_id
+
+def crear_nuevo_chat():
+    nuevo_id = str(uuid.uuid4())
+    num_chat = len(st.session_state.chats) + 1
+    st.session_state.chats[nuevo_id] = {"title": f"Chat {num_chat}", "messages": []}
+    st.session_state.current_chat_id = nuevo_id
+
+# 4. Desplegable Interactivo para Historial de Chats
+with st.expander("💬 Mis Chats (Toca aquí para desplegar conversaciones)"):
+    if st.button("➕ Crear nuevo chat", key="btn_nuevo_main", use_container_width=True):
+        crear_nuevo_chat()
+        st.rerun()
+    
+    nombres_chats = {cid: data["title"] for cid, data in st.session_state.chats.items()}
+    chat_seleccionado = st.selectbox(
+        "Seleccionar conversación activa:", 
+        options=list(nombres_chats.keys()), 
+        format_func=lambda x: nombres_chats[x],
+        index=list(nombres_chats.keys()).index(st.session_state.current_chat_id)
+    )
+    if chat_seleccionado != st.session_state.current_chat_id:
+        st.session_state.current_chat_id = chat_seleccionado
+        st.rerun()
+
+st.markdown("---")
+
+# Obtener mensajes del chat activo
+current_messages = st.session_state.chats[st.session_state.current_chat_id]["messages"]
+
+# Dibujar historial del chat seleccionado
+for message in current_messages:
     with st.chat_message(message["role"]):
         if isinstance(message["content"], tuple):
             st.image(message["content"][0], use_container_width=True)
@@ -48,9 +82,15 @@ for message in st.session_state.messages:
         else:
             st.write(message["content"])
 
-# 4. Menú lateral
+# 5. Menú lateral
 with st.sidebar:
     st.header("⚙️ Opciones de Bull IA")
+    
+    if st.button("➕ Crear nuevo chat", key="btn_nuevo_sidebar", use_container_width=True):
+        crear_nuevo_chat()
+        st.rerun()
+
+    st.markdown("---")
     modo_arte = st.toggle("🎨 Modo Crear Imagen (PNG)")
     
     st.subheader("📷 Adjuntar Imagen")
@@ -62,12 +102,12 @@ with st.sidebar:
     elif opcion_foto == "📷 Cámara":
         imagen_subida = st.camera_input("Toma una foto")
 
-# 5. Lógica del Chat con Memoria
+# 6. Lógica del Chat con Memoria del Chat Activo
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
     # MODO CREAR IMAGEN
     if modo_arte:
-        st.session_state.messages.append({"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"})
+        current_messages.append({"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"})
         with st.chat_message("user"):
             st.write(f"🎨 [Crear imagen]: {prompt}")
 
@@ -85,7 +125,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                             if part.inline_data:
                                 img = Image.open(io.BytesIO(part.inline_data.data))
                                 st.image(img, caption="Imagen generada", use_container_width=True)
-                                st.session_state.messages.append({"role": "assistant", "content": img})
+                                current_messages.append({"role": "assistant", "content": img})
                                 exito = True
                                 break
                         if exito: break
@@ -94,26 +134,30 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                 if not exito:
                     msg_err = "⚠️ No se pudo generar la imagen. Intenta con otra descripción."
                     st.error(msg_err)
-                    st.session_state.messages.append({"role": "assistant", "content": msg_err})
+                    current_messages.append({"role": "assistant", "content": msg_err})
 
     # MODO CHAT CON MEMORIA DE CONVERSACIÓN
     else:
         img_pil = Image.open(imagen_subida) if imagen_subida else None
 
         if img_pil:
-            st.session_state.messages.append({"role": "user", "content": (img_pil, prompt)})
+            current_messages.append({"role": "user", "content": (img_pil, prompt)})
             with st.chat_message("user"):
                 st.image(img_pil, use_container_width=True)
                 st.write(prompt)
         else:
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            current_messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.write(prompt)
 
-        # Construir contexto acumulado para recordar todo
+        # Cambiar el título del chat automáticamente al primer mensaje
+        if len(current_messages) <= 2:
+            st.session_state.chats[st.session_state.current_chat_id]["title"] = prompt[:20] + "..."
+
+        # Construir contexto del chat activo
         contents = ["Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."]
         
-        for msg in st.session_state.messages:
+        for msg in current_messages:
             role_prefix = "Usuario:" if msg["role"] == "user" else "Bull IA:"
             if isinstance(msg["content"], str):
                 contents.append(f"{role_prefix} {msg['content']}")
@@ -129,7 +173,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                     try:
                         response = client.models.generate_content(model=modelo, contents=contents)
                         st.write(response.text)
-                        st.session_state.messages.append({"role": "assistant", "content": response.text})
+                        current_messages.append({"role": "assistant", "content": response.text})
                         respuesta_exitosa = True
                         break
                     except Exception:
@@ -138,4 +182,4 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                 if not respuesta_exitosa:
                     msg_err = "⚠️ Error de conexión o límite de cuota alcanzado. Intenta de nuevo en unos momentos."
                     st.error(msg_err)
-                    st.session_state.messages.append({"role": "assistant", "content": msg_err})
+                    current_messages.append({"role": "assistant", "content": msg_err})
