@@ -4,6 +4,7 @@ import uuid
 from google import genai
 from google.genai import types
 from PIL import Image
+import requests  # NUEVO: Necesario para descargar la imagen de Pollinations
 import streamlit as st
 
 # Configuración de página
@@ -53,7 +54,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Modelos actualizados de Texto y Visión
+# 2. Modelos de Texto y Visión
 MODELOS_TEXTO = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
 
 # 3. Inicializar Estado de Chats Múltiples
@@ -109,12 +110,13 @@ for message in current_messages:
       st.image(message["content"][0], use_container_width=True)
       if message["content"][1]:
         st.write(message["content"][1])
-    elif message["content"].startswith("http"):
+    elif isinstance(message["content"], Image.Image):
+      # CORREGIDO: Ahora el historial lee correctamente los objetos de imagen descargados
       st.image(message["content"], caption="Imagen generada", use_container_width=True)
     else:
       st.write(message["content"])
 
-# 5. MENÚ + CON LAS 3 OPCIONES (En el cuerpo del chat, accesible en Android)
+# 5. MENÚ + CON LAS 3 OPCIONES
 col_plus, col_vacia = st.columns([1, 10])
 
 with col_plus:
@@ -142,7 +144,7 @@ with col_plus:
 # 6. Lógica del Chat
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
-  # MODO CREAR IMAGEN (Gratis e Ilimitado con Pollinations.ai)
+  # MODO CREAR IMAGEN (Gratis, Ilimitado y Descargado en Servidor)
   if modo_arte:
     current_messages.append(
         {"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"}
@@ -173,13 +175,24 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           prompt_encoded = urllib.parse.quote(prompt_ingles)
           url_imagen = f"https://pollinations.ai{prompt_encoded}?width=1024&height=1024&nologo=true"
 
-          # Mostrar la imagen
-          st.image(
-              url_imagen,
-              caption=f"Generado con: {prompt}",
-              use_container_width=True,
-          )
-          current_messages.append({"role": "assistant", "content": url_imagen})
+          # CORREGIDO: Descarga de los bytes reales de la imagen desde el servidor
+          response_img = requests.get(url_imagen, timeout=15)
+
+          if response_img.status_code == 200:
+            # Convertir bytes a un formato legible por Streamlit (PIL Image)
+            img_real = Image.open(io.BytesIO(response_img.content))
+
+            # Mostrar la imagen real en el chat
+            st.image(
+                img_real, caption=f"Generado con: {prompt}", use_container_width=True
+            )
+            # Guardamos el archivo de imagen en el historial, no la URL rota
+            current_messages.append({"role": "assistant", "content": img_real})
+          else:
+            st.error(
+                "⚠️ El servidor de imágenes gratuito está temporalmente"
+                " ocupado. Intenta de nuevo."
+            )
 
         except Exception as e:
           msg_err = f"⚠️ No se pudo procesar la imagen: {e}"
@@ -215,15 +228,14 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       role_prefix = "Usuario:" if msg["role"] == "user" else "Bull IA:"
 
       if isinstance(msg["content"], str):
-        # Si es un enlace de Pollinations generado antes, le avisa al modelo de texto que ya dibujó
-        if msg["content"].startswith("http"):
-          contents.append(f"{role_prefix} [Imagen generada previamente]")
-        else:
-          contents.append(f"{role_prefix} {msg['content']}")
+        contents.append(f"{role_prefix} {msg['content']}")
       elif isinstance(msg["content"], tuple):
         contents.append(f"{role_prefix} {msg['content'][1]}")
         if msg["content"][0] is not None:
           contents.append(msg["content"][0])
+      elif isinstance(msg["content"], Image.Image):
+        # CORREGIDO: Le avisa a la memoria de Gemini de texto que ya se generó una imagen antes
+        contents.append(f"{role_prefix} [Imagen generada previamente]")
 
     with st.chat_message("assistant"):
       with st.spinner("Bull IA está pensando..."):
