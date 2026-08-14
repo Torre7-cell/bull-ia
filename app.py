@@ -1,6 +1,8 @@
 import io
 import json
+import os
 import sqlite3
+import tempfile
 import urllib.parse
 import uuid
 from google import genai
@@ -9,17 +11,14 @@ from PIL import Image
 import requests
 import streamlit as st
 
-# Configuración de página
 st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
 
-# CSS Personalizado: Ajuste de tema oscuro y optimización de botones
 st.markdown(
     """
     <style>
     .stApp { background-color: #09090b; color: #f4f4f5; }
     div[data-testid="stToolbar"] { visibility: hidden; }
 
-    /* Botón "+" estilizado estilo flotante/móvil */
     div[data-testid="stPopover"] > button {
         background-color: #111113 !important;
         color: #ffffff !important;
@@ -43,7 +42,7 @@ st.markdown(
 
 st.title("🐂 Bull IA")
 
-# --- CONFIGURACIÓN DE SQLITE ---
+
 def init_db():
   conn = sqlite3.connect("bull_ia.db")
   c = conn.cursor()
@@ -59,6 +58,7 @@ def init_db():
 
 
 init_db()
+
 
 def cargar_chats_db():
   conn = sqlite3.connect("bull_ia.db")
@@ -77,31 +77,17 @@ def cargar_chats_db():
     chats[cid] = {"title": title, "messages": parsed_msgs}
   return chats
 
+
 def guardar_chat_db(cid, title, messages):
   conn = sqlite3.connect("bull_ia.db")
   c = conn.cursor()
 
   serializable_msgs = []
   for m in messages:
-    if m.get("content_type") == "text":
-      serializable_msgs.append({
-          "role": m["role"],
-          "content_type": "text",
-          "content": m["content"],
-      })
-    elif m.get("content_type") == "generated_image":
-      serializable_msgs.append({
-          "role": m["role"],
-          "content_type": "generated_image",
-          "content": "[Imagen generada previamente]",
-          "url": m.get("url", ""),
-      })
-    elif m.get("content_type") == "user_photo":
-      serializable_msgs.append({
-          "role": m["role"],
-          "content_type": "user_photo",
-          "content": m["content"],
-      })
+    ct = m.get("content_type", "text")
+    serializable_msgs.append(
+        {"role": m["role"], "content_type": ct, "content": m.get("content", "")}
+    )
 
   c.execute(
       "REPLACE INTO chats (id, title, messages) VALUES (?, ?, ?)",
@@ -110,6 +96,7 @@ def guardar_chat_db(cid, title, messages):
   conn.commit()
   conn.close()
 
+
 def eliminar_chat_db(cid):
   conn = sqlite3.connect("bull_ia.db")
   c = conn.cursor()
@@ -117,7 +104,7 @@ def eliminar_chat_db(cid):
   conn.commit()
   conn.close()
 
-# 1. API Key de Gemini
+
 if "GEMINI_API_KEY" in st.secrets:
   api_key = st.secrets["GEMINI_API_KEY"]
 else:
@@ -128,17 +115,13 @@ if not api_key:
   st.stop()
 
 client = genai.Client(api_key=api_key)
-
-# 2. Modelos de la Serie 3 Activos
 MODELOS_TEXTO = [
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
 ]
-
-# 3. Sincronizar Estado con SQLite
 chats_guardados = cargar_chats_db()
 st.session_state.chats = chats_guardados
+
 if not st.session_state.chats:
   first_id = str(uuid.uuid4())
   st.session_state.chats[first_id] = {"title": "Chat Principal", "messages": []}
@@ -149,6 +132,7 @@ if "current_chat_id" not in st.session_state:
 
 if not isinstance(st.session_state.current_chat_id, str):
   st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
+
 
 def crear_nuevo_chat():
   nuevo_id = str(uuid.uuid4())
@@ -161,7 +145,7 @@ def crear_nuevo_chat():
   st.session_state.current_chat_id = nuevo_id
   guardar_chat_db(nuevo_id, titulo_inicial, [])
 
-# 4. Desplegable Interactivo para Historial
+
 with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
   col_nav_1, col_nav_2 = st.columns(2)
 
@@ -188,7 +172,6 @@ with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
     st.session_state.current_chat_id = chat_seleccionado
     st.rerun()
 
-  # Cambiar nombre del chat manualmente
   nuevo_titulo = st.text_input(
       "✏️ Cambiar nombre a este chat:",
       value=nombres_chats[st.session_state.current_chat_id],
@@ -204,7 +187,6 @@ with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
     )
     st.rerun()
 
-  # Botón para eliminar el chat activo con el emoji 🗑️
   if st.button(
       f"🗑️ Eliminar '{nombres_chats[st.session_state.current_chat_id]}'",
       use_container_width=True,
@@ -232,57 +214,33 @@ st.markdown("---")
 current_messages = st.session_state.chats[st.session_state.current_chat_id][
     "messages"
 ]
-
-# Dibujar historial
 for idx, message in enumerate(current_messages):
   with st.chat_message(message["role"]):
-    if message.get("content_type") == "text":
-      st.write(message["content"])
+    st.write(message["content"])
 
-    elif message.get("content_type") == "generated_image":
-      if "url" in message and message["url"]:
-        try:
-          response_hist = requests.get(message["url"], timeout=10)
-          if response_hist.status_code == 200:
-            st.image(
-                Image.open(io.BytesIO(response_hist.content)),
-                use_container_width=True,
-            )
-            st.download_button(
-                label="📥 Descargar Imagen",
-                data=response_hist.content,
-                file_name=f"bull_ia_{idx}.png",
-                mime="image/png",
-                key=f"dl_{idx}",
-            )
-        except Exception:
-          st.write("🎨 [Imagen generada en esta sesión]")
-      else:
-        st.write(message["content"])
-
-    elif message.get("content_type") == "user_photo":
-      st.write(message["content"])
-
-# 5. MENÚ + CON LAS 3 OPCIONES
-col_plus, col_vacia = st.columns([1, 4])
+col_plus, col_vacia = st.columns(2)
 with col_plus:
   with st.popover("➕", help="Opciones de cámara, galería y creación"):
     st.markdown("### 🛠️ Opciones")
     modo_arte = st.toggle("🎨 Modo Crear Imagen")
     st.markdown("---")
-    opcion_foto = st.radio(
-        "📷 Adjuntar imagen:", ["Ninguna", "📁 Galería", "📷 Cámara"]
+    opcion_adjunto = st.radio(
+        "📁 Adjuntar multimedia:", ["Ninguna", "Imagen", "Video (.mp4)"]
     )
 
     imagen_subida = None
-    if opcion_foto == "📁 Galería":
-      imagen_subida = st.file_uploader(
-          "Sube una foto", type=["jpg", "jpeg", "png"]
-      )
-    elif opcion_foto == "📷 Cámara":
-      imagen_subida = st.camera_input("Toma una foto")
+    video_subido = None
+    if opcion_adjunto == "Imagen":
+      tipo_img = st.radio("Origen de imagen:", ["Galería", "Cámara"])
+      if tipo_img == "Galería":
+        imagen_subida = st.file_uploader(
+            "Sube foto", type=["jpg", "jpeg", "png"]
+        )
+      else:
+        imagen_subida = st.camera_input("Toma foto")
+    elif opcion_adjunto == "Video (.mp4)":
+      video_subido = st.file_uploader("Sube video corto", type=["mp4", "mov"])
 
-# 6. Lógica del Chat
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
   active_cid = st.session_state.current_chat_id
   active_title = st.session_state.chats[active_cid]["title"]
@@ -297,16 +255,15 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       st.write(f"🎨 [Crear imagen]: {prompt}")
 
     with st.chat_message("assistant"):
-      with st.spinner("Bull IA está dibujando tu imagen gratis..."):
+      with st.spinner("Bull IA está dibujando tu imagen..."):
         try:
           prompt_ingles = prompt
           try:
             traduccion = client.models.generate_content(
-                model="gemini-3.7-flash",
+                model="gemini-2.5-flash",
                 contents=(
-                    "Translate the following image prompt to descriptive English"
-                    f" for an AI image generator, reply with ONLY the translated"
-                    f" text: {prompt}"
+                    "Translate image prompt to descriptive English, reply with"
+                    f" ONLY translated text: {prompt}"
                 ),
             )
             if traduccion.text:
@@ -316,36 +273,85 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
           prompt_encoded = urllib.parse.quote(prompt_ingles)
           url_imagen = f"https://pollinations.ai/p/{prompt_encoded}?width=1024&height=1024&nologo=true"
-
           response_img = requests.get(url_imagen, timeout=15)
           if response_img.status_code == 200:
-            img_real = Image.open(io.BytesIO(response_img.content))
             st.image(
-                img_real, caption=f"Generado con: {prompt}", use_container_width=True
+                Image.open(io.BytesIO(response_img.content)),
+                use_container_width=True,
             )
             st.download_button(
-                label="📥 Descargar Imagen Creada",
+                label="📥 Descargar Imagen",
                 data=response_img.content,
                 file_name="bull_ia_imagen.png",
                 mime="image/png",
-                key="dl_inmediato",
             )
             current_messages.append({
                 "role": "assistant",
                 "content_type": "generated_image",
                 "content": "[Imagen generada con éxito]",
-                "url": url_imagen,
             })
           else:
-            st.error("⚠️ El servidor de imágenes está ocupado.")
+            st.error("⚠️ Servidor ocupado.")
         except Exception as e:
           current_messages.append({
               "role": "assistant",
               "content_type": "text",
               "content": f"⚠️ Error: {e}",
           })
+
+  elif video_subido is not None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+      tmp_file.write(video_subido.read())
+      tmp_path = tmp_file.name
+
+    current_messages.append({
+        "role": "user",
+        "content_type": "text",
+        "content": f"[Video enviado para análisis]: {prompt}",
+    })
+    with st.chat_message("user"):
+      st.video(tmp_path)
+      st.write(prompt)
+
+    with st.chat_message("assistant"):
+      with st.spinner(
+          "Bull IA está analizando el video (esto puede tomar unos"
+          " segundos)..."
+      ):
+        try:
+          video_file = client.files.upload(file=tmp_path)
+          response = client.models.generate_content(
+              model="gemini-2.5-flash",
+              contents=[
+                  video_file,
+                  prompt if prompt else "Describe este video.",
+              ],
+          )
+          st.write(response.text)
+          current_messages.append({
+              "role": "assistant",
+              "content_type": "text",
+              "content": response.text,
+          })
+        except Exception as e:
+          err_vid = f"⚠️ Error procesando el video: {e}"
+          st.error(err_vid)
+          current_messages.append({
+              "role": "assistant",
+              "content_type": "text",
+              "content": err_vid,
+          })
+        finally:
+          try:
+            os.unlink(tmp_path)
+          except Exception:
+            pass
+
   else:
     img_pil = Image.open(imagen_subida) if imagen_subida else None
+    contents = [
+        "Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo."
+    ]
     if img_pil:
       current_messages.append({
           "role": "user",
@@ -355,6 +361,8 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       with st.chat_message("user"):
         st.image(img_pil, use_container_width=True)
         st.write(prompt)
+      contents.append(img_pil)
+      contents.append(prompt)
     else:
       current_messages.append({
           "role": "user",
@@ -363,16 +371,12 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
       })
       with st.chat_message("user"):
         st.write(prompt)
+      for msg in current_messages:
+        contents.append(f"{msg['role']}: {msg['content']}")
 
     if len(current_messages) <= 2:
       active_title = prompt[:20] + "..."
       st.session_state.chats[active_cid]["title"] = active_title
-
-    contents = [
-        "Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."
-    ]
-    for msg in current_messages:
-      contents.append(f"{msg['role']}: {msg['content']}")
 
     with st.chat_message("assistant"):
       with st.spinner("Bull IA está pensando..."):
