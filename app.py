@@ -12,7 +12,7 @@ import streamlit as st
 # Configuración de página
 st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
 
-# CSS Personalizado: Ajuste de tema oscuro y botón "+" estilo app móvil
+# CSS Personalizado: Ajuste de tema oscuro y optimización de botones
 st.markdown(
     """
     <style>
@@ -87,21 +87,38 @@ def guardar_chat_db(cid, title, messages):
 
   serializable_msgs = []
   for m in messages:
-    if isinstance(m["content"], str):
-      serializable_msgs.append({"role": m["role"], "content": m["content"]})
-    elif isinstance(m["content"], Image.Image):
-      serializable_msgs.append(
-          {"role": m["role"], "content": "[Imagen generada previamente]"}
-      )
-    elif isinstance(m["content"], tuple):
-      serializable_msgs.append(
-          {"role": m["role"], "content": "[Imagen adjunta y texto del usuario]"}
-      )
+    if m.get("content_type") == "text":
+      serializable_msgs.append({
+          "role": m["role"],
+          "content_type": "text",
+          "content": m["content"],
+      })
+    elif m.get("content_type") == "generated_image":
+      serializable_msgs.append({
+          "role": m["role"],
+          "content_type": "generated_image",
+          "content": "[Imagen generada previamente]",
+          "url": m.get("url", ""),
+      })
+    elif m.get("content_type") == "user_photo":
+      serializable_msgs.append({
+          "role": m["role"],
+          "content_type": "user_photo",
+          "content": m["content"],
+      })
 
   c.execute(
       "REPLACE INTO chats (id, title, messages) VALUES (?, ?, ?)",
       (cid, title, json.dumps(serializable_msgs)),
   )
+  conn.commit()
+  conn.close()
+
+
+def eliminar_chat_db(cid):
+  conn = sqlite3.connect("bull_ia.db")
+  c = conn.cursor()
+  c.execute("DELETE FROM chats WHERE id = ?", (cid,))
   conn.commit()
   conn.close()
 
@@ -118,28 +135,25 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Tus Modelos de la Serie 3 Activos
+# 2. Modelos de la Serie 3 Activos
 MODELOS_TEXTO = [
     "gemini-3.7-flash",
     "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
 ]
 
-# 3. Sincronizar Estado con SQLite de forma segura
+# 3. Sincronizar Estado con SQLite
 chats_guardados = cargar_chats_db()
-if "chats" not in st.session_state:
-  st.session_state.chats = chats_guardados
+st.session_state.chats = chats_guardados
 
 if not st.session_state.chats:
   first_id = str(uuid.uuid4())
   st.session_state.chats[first_id] = {"title": "Chat Principal", "messages": []}
   guardar_chat_db(first_id, "Chat Principal", [])
 
-# CORREGIDO: Asignar un ID de texto único de forma estricta (no una lista)
 if "current_chat_id" not in st.session_state:
   st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
 
-# Doble verificación por si el ID guardado se quedó corrupto en la sesión
 if not isinstance(st.session_state.current_chat_id, str):
   st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
 
@@ -158,16 +172,18 @@ def crear_nuevo_chat():
 
 # 4. Desplegable Interactivo para Historial
 with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
-  if st.button("➕ Crear nuevo chat", key="btn_nuevo_main", use_container_width=True):
-    crear_nuevo_chat()
-    st.rerun()
+  col_nav_1, col_nav_2 = st.columns(2)
+
+  with col_nav_1:
+    if st.button("➕ Crear nuevo chat", key="btn_nuevo_main", use_container_width=True):
+      crear_nuevo_chat()
+      st.rerun()
 
   nombres_chats = {
       cid: data["title"] for cid, data in st.session_state.chats.items()
   }
   current_cids = list(nombres_chats.keys())
 
-  # Asegurar que el ID actual exista en la base de datos
   if st.session_state.current_chat_id not in current_cids:
     st.session_state.current_chat_id = current_cids[0]
 
@@ -181,6 +197,46 @@ with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
     st.session_state.current_chat_id = chat_seleccionado
     st.rerun()
 
+  # Cambiar nombre del chat manualmente
+  nuevo_titulo = st.text_input(
+      "✏️ Cambiar nombre a este chat:",
+      value=nombres_chats[st.session_state.current_chat_id],
+  )
+  if nuevo_titulo != nombres_chats[st.session_state.current_chat_id]:
+    st.session_state.chats[st.session_state.current_chat_id]["title"] = (
+        nuevo_titulo
+    )
+    guardar_chat_db(
+        st.session_state.current_chat_id,
+        nuevo_titulo,
+        st.session_state.chats[st.session_state.current_chat_id]["messages"],
+    )
+    st.rerun()
+
+  # Botón para eliminar el chat activo con el emoji 🗑️
+  if st.button(
+      f"🗑️ Eliminar '{nombres_chats[st.session_state.current_chat_id]}'",
+      use_container_width=True,
+  ):
+    id_a_eliminar = st.session_state.current_chat_id
+    eliminar_chat_db(id_a_eliminar)
+    del st.session_state.chats[id_a_eliminar]
+
+    restantes = list(st.session_state.chats.keys())
+    if restantes:
+      st.session_state.current_chat_id = restantes[0]
+    else:
+      first_id = str(uuid.uuid4())
+      st.session_state.chats[first_id] = {
+          "title": "Chat Principal",
+          "messages": [],
+      }
+      st.session_state.current_chat_id = first_id
+      guardar_chat_db(first_id, "Chat Principal", [])
+
+    st.success("Chat eliminado con éxito.")
+    st.rerun()
+
 st.markdown("---")
 
 current_messages = st.session_state.chats[st.session_state.current_chat_id][
@@ -188,9 +244,34 @@ current_messages = st.session_state.chats[st.session_state.current_chat_id][
 ]
 
 # Dibujar historial
-for message in current_messages:
+for idx, message in enumerate(current_messages):
   with st.chat_message(message["role"]):
-    st.write(message["content"])
+    if message.get("content_type") == "text":
+      st.write(message["content"])
+
+    elif message.get("content_type") == "generated_image":
+      if "url" in message and message["url"]:
+        try:
+          response_hist = requests.get(message["url"], timeout=10)
+          if response_hist.status_code == 200:
+            st.image(
+                Image.open(io.BytesIO(response_hist.content)),
+                use_container_width=True,
+            )
+            st.download_button(
+                label="📥 Descargar Imagen",
+                data=response_hist.content,
+                file_name=f"bull_ia_{idx}.png",
+                mime="image/png",
+                key=f"dl_{idx}",
+            )
+        except Exception:
+          st.write("🎨 [Imagen generada en esta sesión]")
+      else:
+        st.write(message["content"])
+
+    elif message.get("content_type") == "user_photo":
+      st.write(message["content"])
 
 # 5. MENÚ + CON LAS 3 OPCIONES
 col_plus, col_vacia = st.columns([1, 10])
@@ -218,9 +299,11 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
   active_title = st.session_state.chats[active_cid]["title"]
 
   if modo_arte:
-    current_messages.append(
-        {"role": "user", "content": f"🎨 [Crear imagen]: {prompt}"}
-    )
+    current_messages.append({
+        "role": "user",
+        "content_type": "text",
+        "content": f"🎨 [Crear imagen]: {prompt}",
+    })
     with st.chat_message("user"):
       st.write(f"🎨 [Crear imagen]: {prompt}")
 
@@ -249,63 +332,4 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
           if response_img.status_code == 200:
             img_real = Image.open(io.BytesIO(response_img.content))
             st.image(
-                img_real, caption=f"Generado con: {prompt}", use_container_width=True
-            )
-            current_messages.append(
-                {"role": "assistant", "content": "[Imagen generada con éxito]"}
-            )
-          else:
-            st.error("⚠️ El servidor de imágenes está ocupado.")
-        except Exception as e:
-          current_messages.append(
-              {"role": "assistant", "content": f"⚠️ Error: {e}"}
-          )
-
-  else:
-    img_pil = Image.open(imagen_subida) if imagen_subida else None
-    if img_pil:
-      current_messages.append(
-          {"role": "user", "content": f"[Foto enviada] {prompt}"}
-      )
-      with st.chat_message("user"):
-        st.image(img_pil, use_container_width=True)
-        st.write(prompt)
-    else:
-      current_messages.append({"role": "user", "content": prompt})
-      with st.chat_message("user"):
-        st.write(prompt)
-
-    if len(current_messages) <= 2:
-      active_title = prompt[:20] + "..."
-      st.session_state.chats[active_cid]["title"] = active_title
-
-    contents = [
-        "Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."
-    ]
-    for msg in current_messages:
-      contents.append(f"{msg['role']}: {msg['content']}")
-
-    with st.chat_message("assistant"):
-      with st.spinner("Bull IA está pensando..."):
-        respuesta_exitosa = False
-        for modelo in MODELOS_TEXTO:
-          try:
-            response = client.models.generate_content(
-                model=modelo, contents=contents
-            )
-            st.write(response.text)
-            current_messages.append(
-                {"role": "assistant", "content": response.text}
-            )
-            respuesta_exitosa = True
-            break
-          except Exception:
-            continue
-
-        if not respuesta_exitosa:
-          err_msg = "⚠️ Error de conexión o límite de cuota alcanzado."
-          st.error(err_msg)
-          current_messages.append({"role": "assistant", "content": err_msg})
-
-  # Guardar cambios permanentemente en SQLite
-  guardar_chat_db(active_cid, active_title, current_messages)
+img_real, caption=f"Generado con: {prompt}", use_container_width=True)st.download_button(label="📥 Descargar Imagen Creada",data=response_img.content,file_name="bull_ia_imagen.png",mime="image/png",key="dl_inmediato",)current_messages.append({"role": "assistant","content_type": "generated_image","content": "[Imagen generada con éxito]","url": url_imagen,})else:st.error("⚠️ El servidor de imágenes está ocupado.")except Exception as e:current_messages.append({"role": "assistant","content_type": "text","content": f"⚠️ Error: {e}",})else:img_pil = Image.open(imagen_subida) if imagen_subida else Noneif img_pil:current_messages.append({"role": "user","content_type": "user_photo","content": f"[Foto enviada] {prompt}",})with st.chat_message("user"):st.image(img_pil, use_container_width=True)st.write(prompt)else:current_messages.append({"role": "user","content_type": "text","content": prompt,})with st.chat_message("user"):st.write(prompt)if len(current_messages) <= 2:active_title = prompt[:20] + "..."st.session_state.chats[active_cid]["title"] = active_titlecontents = ["Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."]for msg in current_messages:contents.append(f"{msg['role']}: {msg['content']}")with st.chat_message("assistant"):with st.spinner("Bull IA está pensando..."):respuesta_exitosa = Falsefor modelo in MODELOS_TEXTO:try:response = client.models.generate_content(model=modelo, contents=contents)st.write(response.text)current_messages.append({"role": "assistant","content_type": "text","content": response.text,})respuesta_exitosa = Truebreakexcept Exception:continueif not respuesta_exitosa:err_msg = "⚠️ Error de conexión o límite de cuota alcanzado."st.error(err_msg)current_messages.append({"role": "assistant","content_type": "text","content": err_msg,})guardar_chat_db(active_cid, active_title, current_messages)
