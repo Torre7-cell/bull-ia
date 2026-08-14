@@ -1,6 +1,17 @@
-import ioimport jsonimport sqlite3import urllib.parseimport uuidfrom google import genaifrom google.genai import typesfrom PIL import Imageimport requestsimport streamlit as st
+import io
+import json
+import sqlite3
+import urllib.parse
+import uuid
+from google import genai
+from google.genai import types
+from PIL import Image
+import requests
+import streamlit as st
+
 # Configuración de página
 st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
+
 # CSS Personalizado: Ajuste de tema oscuro y optimización de botones
 st.markdown(
     """
@@ -32,7 +43,8 @@ st.markdown(
 
 st.title("🐂 Bull IA")
 
-# --- CONFIGURACIÓN DE SQLITE ---def init_db():
+# --- CONFIGURACIÓN DE SQLITE ---
+def init_db():
   conn = sqlite3.connect("bull_ia.db")
   c = conn.cursor()
   c.execute("""
@@ -105,28 +117,38 @@ def eliminar_chat_db(cid):
   conn.commit()
   conn.close()
 
-# 1. API Key de Geminiif "GEMINI_API_KEY" in st.secrets:
-  api_key = st.secrets["GEMINI_API_KEY"]else:
+# 1. API Key de Gemini
+if "GEMINI_API_KEY" in st.secrets:
+  api_key = st.secrets["GEMINI_API_KEY"]
+else:
   api_key = st.text_input("Ingresa tu API Key de Gemini:", type="password")
+
 if not api_key:
   st.info("Por favor, ingresa tu API Key de Gemini para comenzar.")
   st.stop()
+
 client = genai.Client(api_key=api_key)
-# 2. Modelos de la Serie 3 ActivosMODELOS_TEXTO = [
+
+# 2. Modelos de la Serie 3 Activos
+MODELOS_TEXTO = [
     "gemini-3.7-flash",
     "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
 ]
-# 3. Sincronizar Estado con SQLitechats_guardados = cargar_chats_db()
+
+# 3. Sincronizar Estado con SQLite
+chats_guardados = cargar_chats_db()
 st.session_state.chats = chats_guardados
 if not st.session_state.chats:
   first_id = str(uuid.uuid4())
   st.session_state.chats[first_id] = {"title": "Chat Principal", "messages": []}
   guardar_chat_db(first_id, "Chat Principal", [])
+
 if "current_chat_id" not in st.session_state:
-  st.session_state.current_chat_id = list(st.session_state.chats.keys())
+  st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
+
 if not isinstance(st.session_state.current_chat_id, str):
-  st.session_state.current_chat_id = list(st.session_state.chats.keys())
+  st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
 
 def crear_nuevo_chat():
   nuevo_id = str(uuid.uuid4())
@@ -139,7 +161,8 @@ def crear_nuevo_chat():
   st.session_state.current_chat_id = nuevo_id
   guardar_chat_db(nuevo_id, titulo_inicial, [])
 
-# 4. Desplegable Interactivo para Historialwith st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
+# 4. Desplegable Interactivo para Historial
+with st.expander("💬 Mis Chats Permanentes (Guardados en SQLite)"):
   col_nav_1, col_nav_2 = st.columns(2)
 
   with col_nav_1:
@@ -153,7 +176,7 @@ def crear_nuevo_chat():
   current_cids = list(nombres_chats.keys())
 
   if st.session_state.current_chat_id not in current_cids:
-    st.session_state.current_chat_id = current_cids
+    st.session_state.current_chat_id = current_cids[0]
 
   chat_seleccionado = st.selectbox(
       "Seleccionar conversación activa:",
@@ -192,7 +215,7 @@ def crear_nuevo_chat():
 
     restantes = list(st.session_state.chats.keys())
     if restantes:
-      st.session_state.current_chat_id = restantes
+      st.session_state.current_chat_id = restantes[0]
     else:
       first_id = str(uuid.uuid4())
       st.session_state.chats[first_id] = {
@@ -209,7 +232,9 @@ st.markdown("---")
 current_messages = st.session_state.chats[st.session_state.current_chat_id][
     "messages"
 ]
-# Dibujar historialfor idx, message in enumerate(current_messages):
+
+# Dibujar historial
+for idx, message in enumerate(current_messages):
   with st.chat_message(message["role"]):
     if message.get("content_type") == "text":
       st.write(message["content"])
@@ -237,7 +262,9 @@ current_messages = st.session_state.chats[st.session_state.current_chat_id][
 
     elif message.get("content_type") == "user_photo":
       st.write(message["content"])
-# 5. MENÚ + CON LAS 3 OPCIONEScol_plus, col_vacia = st.columns()
+
+# 5. MENÚ + CON LAS 3 OPCIONES
+col_plus, col_vacia = st.columns([1, 4])
 with col_plus:
   with st.popover("➕", help="Opciones de cámara, galería y creación"):
     st.markdown("### 🛠️ Opciones")
@@ -254,7 +281,9 @@ with col_plus:
       )
     elif opcion_foto == "📷 Cámara":
       imagen_subida = st.camera_input("Toma una foto")
-# 6. Lógica del Chatif prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
+
+# 6. Lógica del Chat
+if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
   active_cid = st.session_state.current_chat_id
   active_title = st.session_state.chats[active_cid]["title"]
 
@@ -286,90 +315,91 @@ with col_plus:
             pass
 
           prompt_encoded = urllib.parse.quote(prompt_ingles)
-          url_imagen = f"https://pollinations.ai{prompt_encoded}?width=1024&height=1024&nologo=true"
+          url_imagen = f"https://pollinations.ai/p/{prompt_encoded}?width=1024&height=1024&nologo=true"
 
           response_img = requests.get(url_imagen, timeout=15)
           if response_img.status_code == 200:
             img_real = Image.open(io.BytesIO(response_img.content))
             st.image(
+                img_real, caption=f"Generado con: {prompt}", use_container_width=True
+            )
+            st.download_button(
+                label="📥 Descargar Imagen Creada",
+                data=response_img.content,
+                file_name="bull_ia_imagen.png",
+                mime="image/png",
+                key="dl_inmediato",
+            )
+            current_messages.append({
+                "role": "assistant",
+                "content_type": "generated_image",
+                "content": "[Imagen generada con éxito]",
+                "url": url_imagen,
+            })
+          else:
+            st.error("⚠️ El servidor de imágenes está ocupado.")
+        except Exception as e:
+          current_messages.append({
+              "role": "assistant",
+              "content_type": "text",
+              "content": f"⚠️ Error: {e}",
+          })
+  else:
+    img_pil = Image.open(imagen_subida) if imagen_subida else None
+    if img_pil:
+      current_messages.append({
+          "role": "user",
+          "content_type": "user_photo",
+          "content": f"[Foto enviada] {prompt}",
+      })
+      with st.chat_message("user"):
+        st.image(img_pil, use_container_width=True)
+        st.write(prompt)
+    else:
+      current_messages.append({
+          "role": "user",
+          "content_type": "text",
+          "content": prompt,
+      })
+      with st.chat_message("user"):
+        st.write(prompt)
 
-img_real, caption=f"Generado con: {prompt}", use_container_width=True
-)
-st.download_button(
-label="📥 Descargar Imagen Creada",
-data=response_img.content,
-file_name="bull_ia_imagen.png",
-mime="image/png",
-key="dl_inmediato",
-)
-current_messages.append({
-"role": "assistant",
-"content_type": "generated_image",
-"content": "[Imagen generada con éxito]",
-"url": url_imagen,
-})
-else:
-st.error("⚠️ El servidor de imágenes está ocupado.")
-except Exception as e:
-current_messages.append({
-"role": "assistant",
-"content_type": "text",
-"content": f"⚠️ Error: {e}",
-})
-else:
-img_pil = Image.open(imagen_subida) if imagen_subida else None
-if img_pil:
-current_messages.append({
-"role": "user",
-"content_type": "user_photo",
-"content": f"[Foto enviada] {prompt}",
-})
-with st.chat_message("user"):
-st.image(img_pil, use_container_width=True)
-st.write(prompt)
-else:
-current_messages.append({
-"role": "user",
-"content_type": "text",
-"content": prompt,
-})
-with st.chat_message("user"):
-st.write(prompt)
-if len(current_messages) <= 2:
-active_title = prompt[:20] + "..."
-st.session_state.chats[active_cid]["title"] = active_title
-contents = [
-"Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."
-]
-for msg in current_messages:
-contents.append(f"{msg['role']}: {msg['content']}")
-with st.chat_message("assistant"):
-with st.spinner("Bull IA está pensando..."):
-respuesta_exitosa = False
-for modelo in MODELOS_TEXTO:
-try:
-response = client.models.generate_content(
-model=modelo, contents=contents
-)
-st.write(response.text)
-current_messages.append({
-"role": "assistant",
-"content_type": "text",
-"content": response.text,
-})
-respuesta_exitosa = True
-break
-except Exception:
-continue
-if not respuesta_exitosa:
-err_msg = "⚠️ Error de conexión o límite de cuota alcanzado."
-st.error(err_msg)
-current_messages.append({
-"role": "assistant",
-"content_type": "text",
-"content": err_msg,
-})
-guardar_chat_db(active_cid, active_title, current_messages)
+    if len(current_messages) <= 2:
+      active_title = prompt[:20] + "..."
+      st.session_state.chats[active_cid]["title"] = active_title
 
+    contents = [
+        "Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."
+    ]
+    for msg in current_messages:
+      contents.append(f"{msg['role']}: {msg['content']}")
 
- 
+    with st.chat_message("assistant"):
+      with st.spinner("Bull IA está pensando..."):
+        respuesta_exitosa = False
+        for modelo in MODELOS_TEXTO:
+          try:
+            response = client.models.generate_content(
+                model=modelo, contents=contents
+            )
+            st.write(response.text)
+            current_messages.append({
+                "role": "assistant",
+                "content_type": "text",
+                "content": response.text,
+            })
+            respuesta_exitosa = True
+            break
+          except Exception:
+            continue
+
+        if not respuesta_exitosa:
+          err_msg = "⚠️ Error de conexión o límite de cuota alcanzado."
+          st.error(err_msg)
+          current_messages.append({
+              "role": "assistant",
+              "content_type": "text",
+              "content": err_msg,
+          })
+
+  guardar_chat_db(active_cid, active_title, current_messages)
