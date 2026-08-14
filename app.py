@@ -11,7 +11,11 @@ from PIL import Image
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
+st.set_page_config(
+    page_title="Bull IA",
+    page_icon="https://cdn.phototourl.com/free/2026-08-14-4ff1f25c-c40f-44a1-9914-d72490d1a4f5.png",  # <-- Reemplaza con el enlace a tu logo
+    layout="centered",
+)
 
 st.markdown(
     """
