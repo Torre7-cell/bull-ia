@@ -8,10 +8,30 @@ from PIL import Image
 # Configuración de página
 st.set_page_config(page_title="Bull IA", page_icon="🐂", layout="centered")
 
+# CSS Personalizado: Ajuste de tema oscuro y botón "+" negro/discreto estilo app móvil
 st.markdown("""
     <style>
     .stApp { background-color: #09090b; color: #f4f4f5; }
     div[data-testid="stToolbar"] { visibility: hidden; }
+
+    /* Botón "+" estilizado estilo flotante/móvil */
+    div[data-testid="stPopover"] > button {
+        background-color: #111113 !important;
+        color: #ffffff !important;
+        border: 1px solid #27272a !important;
+        border-radius: 50% !important;
+        width: 42px !important;
+        height: 42px !important;
+        font-size: 20px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.5) !important;
+    }
+    div[data-testid="stPopover"] > button:hover {
+        background-color: #27272a !important;
+        border-color: #3f3f46 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -29,7 +49,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Modelos actualizados a la generación Gemini 3.x
+# 2. Modelos actualizados
 MODELOS_TEXTO = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
 MODELOS_IMAGEN = ['gemini-3.1-flash-image', 'gemini-3-pro-image']
 
@@ -53,7 +73,7 @@ with st.expander("💬 Mis Chats (Toca aquí para desplegar conversaciones)"):
     if st.button("➕ Crear nuevo chat", key="btn_nuevo_main", use_container_width=True):
         crear_nuevo_chat()
         st.rerun()
-    
+
     nombres_chats = {cid: data["title"] for cid, data in st.session_state.chats.items()}
     chat_seleccionado = st.selectbox(
         "Seleccionar conversación activa:", 
@@ -82,27 +102,28 @@ for message in current_messages:
         else:
             st.write(message["content"])
 
-# 5. Menú lateral
-with st.sidebar:
-    st.header("⚙️ Opciones de Bull IA")
-    
-    if st.button("➕ Crear nuevo chat", key="btn_nuevo_sidebar", use_container_width=True):
-        crear_nuevo_chat()
-        st.rerun()
+# 5. MENÚ + CON LAS 3 OPCIONES (En el cuerpo del chat, accesible en Android)
+col_plus, col_vacia = st.columns([1, 10])
 
-    st.markdown("---")
-    modo_arte = st.toggle("🎨 Modo Crear Imagen (PNG)")
-    
-    st.subheader("📷 Adjuntar Imagen")
-    opcion_foto = st.radio("Fuente de imagen:", ["Ninguna", "📁 Galería", "📷 Cámara"])
-    
-    imagen_subida = None
-    if opcion_foto == "📁 Galería":
-        imagen_subida = st.file_uploader("Sube una foto", type=["jpg", "jpeg", "png"])
-    elif opcion_foto == "📷 Cámara":
-        imagen_subida = st.camera_input("Toma una foto")
+with col_plus:
+    with st.popover("➕", help="Opciones de cámara, galería y creación"):
+        st.markdown("### 🛠️ Opciones")
 
-# 6. Lógica del Chat con Memoria del Chat Activo
+        # Opción 1: Modo crear imágenes
+        modo_arte = st.toggle("🎨 Modo Crear Imagen")
+
+        st.markdown("---")
+
+        # Opción 2 y 3: Adjuntar foto desde galería o cámara
+        opcion_foto = st.radio("📷 Adjuntar imagen:", ["Ninguna", "📁 Galería", "📷 Cámara"])
+
+        imagen_subida = None
+        if opcion_foto == "📁 Galería":
+            imagen_subida = st.file_uploader("Sube una foto de tu galería", type=["jpg", "jpeg", "png"])
+        elif opcion_foto == "📷 Cámara":
+            imagen_subida = st.camera_input("Toma una foto")
+
+# 6. Lógica del Chat
 if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
     # MODO CREAR IMAGEN
@@ -156,7 +177,7 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
 
         # Construir contexto del chat activo
         contents = ["Eres Bull IA, un asistente inteligente, directo y respetuoso. Mantén el hilo de la conversación."]
-        
+
         for msg in current_messages:
             role_prefix = "Usuario:" if msg["role"] == "user" else "Bull IA:"
             if isinstance(msg["content"], str):
