@@ -116,7 +116,7 @@ for message in current_messages:
       st.write(message["content"])
 
 # 5. MENÚ + CON LAS 3 OPCIONES
-col_plus, col_vacia = st.columns()
+col_plus, col_vacia = st.columns([1, 10]) 
 
 with col_plus:
   with st.popover("➕", help="Opciones de cámara, galería y creación"):
