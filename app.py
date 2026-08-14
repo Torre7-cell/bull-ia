@@ -51,7 +51,7 @@ client = genai.Client(api_key=api_key)
 
 # 2. Modelos actualizados
 MODELOS_TEXTO = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
-MODELOS_IMAGEN = ['gemini-3.1-flash-image', 'gemini-3-pro-image']
+MODELOS_IMAGEN = ['imagen-3.0-generate-002']
 
 # 3. Inicializar Estado de Chats Múltiples
 if "chats" not in st.session_state:
@@ -137,18 +137,21 @@ if prompt := st.chat_input("Escribe un mensaje a Bull IA..."):
                 exito = False
                 for mod_img in MODELOS_IMAGEN:
                     try:
-                        response = client.models.generate_content(
+                        result = client.models.generate_images(
                             model=mod_img,
-                            contents=f"Genera una imagen artística de alta calidad sobre: {prompt}",
-                            config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                            prompt=prompt,
+                            config=types.GenerateImagesConfig(
+                                number_of_images=1,
+                                output_mime_type="image/jpeg",
+                                aspect_ratio="1:1"
+                            )
                         )
-                        for part in response.candidates[0].content.parts:
-                            if part.inline_data:
-                                img = Image.open(io.BytesIO(part.inline_data.data))
-                                st.image(img, caption="Imagen generada", use_container_width=True)
-                                current_messages.append({"role": "assistant", "content": img})
-                                exito = True
-                                break
+                        for generated_image in result.generated_images:
+                            img = Image.open(io.BytesIO(generated_image.image.image_bytes))
+                            st.image(img, caption="Imagen generada", use_container_width=True)
+                            current_messages.append({"role": "assistant", "content": img})
+                            exito = True
+                            break
                         if exito: break
                     except Exception:
                         continue
